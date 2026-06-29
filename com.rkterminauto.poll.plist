@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rkterminauto.poll</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/wgraham/personal/rk-terminauto/run.sh</string>
+    </array>
+
+    <!-- Ensure Homebrew's uv is on PATH under launchd's minimal environment. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- Run every 120 seconds. -->
+    <key>StartInterval</key>
+    <integer>120</integer>
+
+    <!-- Don't fire a burst at load; first run happens after the interval. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/wgraham/personal/rk-terminauto/poll.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/wgraham/personal/rk-terminauto/poll.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/wgraham/personal/rk-terminauto</string>
+</dict>
+</plist>

@@ -1,0 +1,5 @@
+.venv/
+config.env
+poll.log
+__pycache__/
+*.pyc
