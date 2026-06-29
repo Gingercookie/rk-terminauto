@@ -43,7 +43,19 @@ Watch the output — you should see `no appointments available` (the normal case
 and, if 2captcha is funded, no errors. If you see `captcha likely rejected`
 occasionally, that's expected; the next cycle retries.
 
-## Run every 2 minutes (launchd)
+## Run as a daemon (launchd)
+
+`poll.py` runs as a long-lived process with a **tiered polling schedule** that
+hits hardest at the top of the hour (when the embassy tends to release slots):
+
+| Minute of hour | Interval |
+| -------------- | -------- |
+| `:00`–`:05`    | 30s      |
+| `:05`–`:35`    | 60s      |
+| `:35`–`:00`    | 5 min    |
+
+≈ 45 solves/hour (~$1/day on 2captcha). launchd just keeps the process alive
+and restarts it on crash or reboot.
 
 ```bash
 cp com.rkterminauto.poll.plist ~/Library/LaunchAgents/
@@ -61,7 +73,8 @@ and reload it.
 
 ## Tuning
 
-- **Interval**: `StartInterval` in the plist (seconds).
+- **Schedule**: the `SCHEDULE` list near the bottom of `poll.py` —
+  `(start_minute, interval_seconds)` tiers.
 - **Target** location/realm/category: env vars in `config.env`.
 - **Notification loudness**: currently pushes every cycle while slots exist
   (see `run_once` in `poll.py`).

@@ -327,9 +327,47 @@ def run_once(cfg: Config) -> None:
         log("no appointments available")
 
 
+# --- Tiered polling schedule ------------------------------------------------
+# Appointments tend to be released at the top of the hour, so poll fastest then
+# and back off as the hour wears on. Each tier is (start_minute, interval_secs)
+# and applies until the next tier's start_minute.
+#   :00-:05  every 30s   (catch the drop)
+#   :05-:35  every 60s
+#   :35-:00  every 300s
+SCHEDULE = [(0, 30), (5, 60), (35, 300)]
+
+
+def interval_for_minute(minute: int) -> int:
+    """Return the poll interval (seconds) for the given minute-of-hour."""
+    chosen = SCHEDULE[0][1]
+    for start_minute, secs in SCHEDULE:
+        if minute >= start_minute:
+            chosen = secs
+    return chosen
+
+
 def main() -> None:
     cfg = Config.from_env()
-    run_once(cfg)
+    log(
+        f"starting poller for {LOCATION_CODE} "
+        f"(realm {REALM_ID}, cat {CATEGORY_ID}); "
+        f"schedule={SCHEDULE}"
+    )
+    while True:
+        start = time.monotonic()
+        try:
+            run_once(cfg)
+        except Exception as e:  # never let one bad cycle kill the daemon
+            log(f"unexpected error in cycle: {e}")
+
+        minute = time.localtime().tm_min
+        interval = interval_for_minute(minute)
+        # Subtract the time the cycle already took (captcha solve can be ~15s)
+        # so the effective cadence matches the target interval.
+        elapsed = time.monotonic() - start
+        sleep_for = max(1.0, interval - elapsed)
+        log(f"next poll in {sleep_for:.0f}s (tier={interval}s, minute=:{minute:02d})")
+        time.sleep(sleep_for)
 
 
 if __name__ == "__main__":

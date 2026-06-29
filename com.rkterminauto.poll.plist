@@ -18,13 +18,18 @@
         <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 
-    <!-- Run every 120 seconds. -->
-    <key>StartInterval</key>
-    <integer>120</integer>
+    <!-- poll.py is a long-running daemon (it manages its own tiered polling
+         schedule internally). launchd just keeps it alive and restarts it on
+         crash or after reboot. -->
+    <key>KeepAlive</key>
+    <true/>
 
-    <!-- Don't fire a burst at load; first run happens after the interval. -->
     <key>RunAtLoad</key>
-    <false/>
+    <true/>
+
+    <!-- Don't hammer restarts if it crash-loops. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
 
     <key>StandardOutPath</key>
     <string>/Users/wgraham/personal/rk-terminauto/poll.log</string>
