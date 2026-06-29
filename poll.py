@@ -47,9 +47,11 @@ NO_APPT_PATTERN = re.compile(
     r"there\s+are\s+no\s+appointments\s+available", re.IGNORECASE
 )
 
-# Marker that confirms we actually reached a month grid (vs. an error/captcha
-# page). The month navigation links always point back at appointment_showMonth.
-MONTH_PAGE_PATTERN = re.compile(r"appointment_showMonth\.do", re.IGNORECASE)
+# Presence of the captcha form means the captcha was wrong (or not yet solved)
+# and the server re-rendered the gate. A real month grid never contains it.
+# NB: we can't use the bare "appointment_showMonth.do" string as a month-grid
+# marker because it also appears in the captcha form's action attribute.
+CAPTCHA_FORM_PATTERN = re.compile(r"appointment_captcha_month", re.IGNORECASE)
 
 # Captcha image is inlined as: background:white url('data:image/jpg;base64,....')
 CAPTCHA_IMG_PATTERN = re.compile(
@@ -167,8 +169,9 @@ def solve_captcha(cfg: Config, image: bytes) -> str | None:
                 "json": "1",
                 # RK-Termin captchas are short alphanumeric strings.
                 "regsense": "1",  # case-sensitive
+                # With method=base64 the image goes in the `body` field.
+                "body": base64.b64encode(image).decode("ascii"),
             },
-            files={"file": ("captcha.jpg", image, "image/jpeg")},
             timeout=30,
         ).json()
     except Exception as e:
@@ -250,8 +253,8 @@ class CheckResult:
 
 
 def interpret(html: str) -> CheckResult:
-    reached = bool(MONTH_PAGE_PATTERN.search(html))
-    if not reached:
+    # If the captcha form is present, the solve was rejected — not a month grid.
+    if CAPTCHA_FORM_PATTERN.search(html):
         return CheckResult(reached_month=False, available=False)
     no_appt = bool(NO_APPT_PATTERN.search(html))
     return CheckResult(reached_month=True, available=not no_appt)
