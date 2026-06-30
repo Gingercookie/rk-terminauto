@@ -52,10 +52,18 @@ NO_APPT_PATTERN = re.compile(
 )
 
 # Presence of the captcha form means the captcha was wrong (or not yet solved)
-# and the server re-rendered the gate. A real month grid never contains it.
-# NB: we can't use the bare "appointment_showMonth.do" string as a month-grid
-# marker because it also appears in the captcha form's action attribute.
+# and the server re-rendered the gate.
 CAPTCHA_FORM_PATTERN = re.compile(r"appointment_captcha_month", re.IGNORECASE)
+
+# Positive marker that we actually reached a month grid: the prev/next month
+# navigation links, which carry a dateStr query param. Error, maintenance,
+# rate-limit and session-expired pages lack this, so requiring it prevents
+# misreading any unexpected page as "slots available". (We can't key off the
+# bare "appointment_showMonth.do" string — it also appears in the captcha
+# form's action attribute.)
+MONTH_GRID_PATTERN = re.compile(
+    r"appointment_showMonth\.do\?[^\"']*dateStr=", re.IGNORECASE
+)
 
 # Captcha image is inlined as: background:white url('data:image/jpg;base64,....')
 CAPTCHA_IMG_PATTERN = re.compile(
@@ -287,15 +295,23 @@ def interpret(html: str) -> CheckResult:
     # If the captcha form is present, the solve was rejected — not a month grid.
     if CAPTCHA_FORM_PATTERN.search(html):
         return CheckResult(reached_month=False, available=False)
+    # Require positive proof we're on a month grid; otherwise an error/maintenance
+    # page would be misread as "available" via the double-negative below.
+    if not MONTH_GRID_PATTERN.search(html):
+        return CheckResult(reached_month=False, available=False)
     no_appt = bool(NO_APPT_PATTERN.search(html))
     return CheckResult(reached_month=True, available=not no_appt)
 
 
 def notify(cfg: Config, title: str, message: str, priority: str = "urgent") -> None:
     url = f"{cfg.ntfy_server}/{cfg.ntfy_topic}"
+    # Human entry point for the booking flow. Note: this opens a fresh,
+    # captcha-gated session in your browser — the poller's session cannot be
+    # shared to your phone, so you'll solve one captcha by hand here.
     booking_url = (
-        f"{BASE}/appointment_showMonth.do?"
-        f"locationCode={LOCATION_CODE}&realmId={REALM_ID}&categoryId={CATEGORY_ID}"
+        f"{BASE}/choose_category.do?"
+        f"locationCode={LOCATION_CODE}&realmId={REALM_ID}"
+        f"&categoryId={CATEGORY_ID}&request_locale={cfg.request_locale}"
     )
     try:
         requests.post(
@@ -363,7 +379,8 @@ def run_once(cfg: Config) -> None:
             message=(
                 f"Possible appointment open for {LOCATION_CODE} "
                 f"(realm {REALM_ID}, cat {CATEGORY_ID}). "
-                "Open the booking page NOW to reserve."
+                "Tap to open the booking site — you'll solve one captcha, "
+                "then reserve."
             ),
         )
     else:

@@ -43,6 +43,20 @@ Watch the output — you should see `no appointments available` (the normal case
 and, if 2captcha is funded, no errors. If you see `captcha likely rejected`
 occasionally, that's expected; the next cycle retries.
 
+> Be a considerate client: `service2.diplo.de` is a government server with low
+> tolerance for rapid-fire requests and will start timing out connections if
+> you poll too hard. Don't loop the script manually for testing — run a couple
+> of cycles at most, then let the deployed daemon poll at its tiered cadence.
+
+### Tests
+
+The detection logic (the highest-stakes part) is covered by `test_poll.py`:
+
+```bash
+uv run python test_poll.py        # no pytest needed
+# or: uv run python -m pytest -q
+```
+
 ## Run as a daemon (launchd)
 
 `poll.py` runs as a long-lived process with a **tiered polling schedule** that
