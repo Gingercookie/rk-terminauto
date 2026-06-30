@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rk-terminauto
+  labels:
+    app: rk-terminauto
+spec:
+  # MUST stay at 1: two pods would double-poll and double-pay for captchas.
+  replicas: 1
+  strategy:
+    # Never run two pods at once during a rollout.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rk-terminauto
+  template:
+    metadata:
+      labels:
+        app: rk-terminauto
+    spec:
+      # Home-lab nodes are arm64.
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      containers:
+        - name: rk-terminauto
+          image: docker.io/wilgrimthepilgrim/rk-terminauto:latest
+          imagePullPolicy: Always
+          env:
+            - name: LOG_FORMAT
+              value: "json"
+            # Container clock is UTC; the tiered schedule keys off minute-of-hour
+            # which is timezone-independent, so TZ only affects log timestamps.
+            - name: TZ
+              value: "UTC"
+          envFrom:
+            - secretRef:
+                name: rk-terminauto-secrets
+            - configMapRef:
+                name: rk-terminauto-config
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities:
+              drop: ["ALL"]
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault

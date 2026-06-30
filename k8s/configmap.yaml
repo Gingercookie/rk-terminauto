@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rk-terminauto-config
+data:
+  # Target appointment — these are not secret.
+  RK_LOCATION_CODE: "losa"
+  RK_REALM_ID: "1363"
+  RK_CATEGORY_ID: "3301"
+  RK_LOCALE: "en"
+  NTFY_SERVER: "https://ntfy.sh"

@@ -21,6 +21,7 @@ never blocks or retries aggressively.
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import sys
@@ -28,6 +29,9 @@ import time
 from dataclasses import dataclass
 
 import requests
+
+# Log format: "json" for structured logs (Loki/promtail), else human text.
+LOG_FORMAT = os.environ.get("LOG_FORMAT", "text").lower()
 
 # --- Target -----------------------------------------------------------------
 BASE = "https://service2.diplo.de/rktermin/extern"
@@ -91,9 +95,28 @@ class Config:
         )
 
 
-def log(msg: str) -> None:
-    """Timestamped line to stdout (captured by launchd into the log file)."""
-    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}", flush=True)
+def log(msg: str, *, event: str = "info", level: str = "info", **fields) -> None:
+    """Emit a log line to stdout.
+
+    With LOG_FORMAT=json (containers) each line is a JSON object so Loki can
+    index fields like `event`, `available`, `location`. Otherwise a timestamped
+    human-readable line for local runs.
+    """
+    ts = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    if LOG_FORMAT == "json":
+        record = {
+            "ts": ts,
+            "level": level,
+            "event": event,
+            "msg": msg,
+            "location": LOCATION_CODE,
+            "realm": REALM_ID,
+            "category": CATEGORY_ID,
+            **fields,
+        }
+        print(json.dumps(record), flush=True)
+    else:
+        print(f"{ts} {msg}", flush=True)
 
 
 def new_session() -> requests.Session:
@@ -175,11 +198,15 @@ def solve_captcha(cfg: Config, image: bytes) -> str | None:
             timeout=30,
         ).json()
     except Exception as e:
-        log(f"2captcha submit error: {e}")
+        log(f"2captcha submit error: {e}", event="captcha_error", level="error")
         return None
 
     if submit.get("status") != 1:
-        log(f"2captcha submit rejected: {submit.get('request')}")
+        log(
+            f"2captcha submit rejected: {submit.get('request')}",
+            event="captcha_error",
+            level="error",
+        )
         return None
 
     captcha_id = submit["request"]
@@ -200,17 +227,21 @@ def solve_captcha(cfg: Config, image: bytes) -> str | None:
                 timeout=30,
             ).json()
         except Exception as e:
-            log(f"2captcha poll error: {e}")
+            log(f"2captcha poll error: {e}", event="captcha_error", level="error")
             continue
 
         if res.get("status") == 1:
             return res["request"].strip()
         if res.get("request") == "CAPCHA_NOT_READY":
             continue
-        log(f"2captcha solve failed: {res.get('request')}")
+        log(
+            f"2captcha solve failed: {res.get('request')}",
+            event="captcha_error",
+            level="error",
+        )
         return None
 
-    log("2captcha timed out")
+    log("2captcha timed out", event="captcha_error", level="error")
     return None
 
 
@@ -279,7 +310,7 @@ def notify(cfg: Config, title: str, message: str, priority: str = "urgent") -> N
             timeout=30,
         )
     except Exception as e:
-        log(f"ntfy push error: {e}")
+        log(f"ntfy push error: {e}", event="ntfy_error", level="error")
 
 
 def run_once(cfg: Config) -> None:
@@ -287,33 +318,45 @@ def run_once(cfg: Config) -> None:
     try:
         page = fetch_captcha_page(s, cfg)
     except Exception as e:
-        log(f"failed to load captcha page: {e}")
+        log(f"failed to load captcha page: {e}", event="fetch_error", level="error")
         return
 
     image = extract_captcha_image(page)
     if image is None:
-        log("no captcha image found on page (layout changed or blocked?)")
+        log(
+            "no captcha image found on page (layout changed or blocked?)",
+            event="no_captcha_image",
+            level="error",
+        )
         return
 
     captcha_text = solve_captcha(cfg, image)
     if not captcha_text:
-        log("captcha unsolved; skipping cycle")
+        log("captcha unsolved; skipping cycle", event="captcha_unsolved")
         return
 
     try:
         month_html = submit_month(s, cfg, captcha_text)
     except Exception as e:
-        log(f"month submit failed: {e}")
+        log(f"month submit failed: {e}", event="submit_error", level="error")
         return
 
     result = interpret(month_html)
     if not result.reached_month:
         # Almost always a wrong captcha -> bounced back to the captcha form.
-        log("captcha likely rejected (no month grid); skipping cycle")
+        log(
+            "captcha likely rejected (no month grid); skipping cycle",
+            event="captcha_rejected",
+        )
         return
 
     if result.available:
-        log("!!! APPOINTMENTS APPEAR AVAILABLE -> notifying")
+        log(
+            "APPOINTMENTS APPEAR AVAILABLE -> notifying",
+            event="slot_available",
+            level="warning",
+            available=True,
+        )
         notify(
             cfg,
             title="RK-Termin slot available!",
@@ -324,7 +367,7 @@ def run_once(cfg: Config) -> None:
             ),
         )
     else:
-        log("no appointments available")
+        log("no appointments available", event="no_slots", available=False)
 
 
 # --- Tiered polling schedule ------------------------------------------------
@@ -351,14 +394,15 @@ def main() -> None:
     log(
         f"starting poller for {LOCATION_CODE} "
         f"(realm {REALM_ID}, cat {CATEGORY_ID}); "
-        f"schedule={SCHEDULE}"
+        f"schedule={SCHEDULE}",
+        event="startup",
     )
     while True:
         start = time.monotonic()
         try:
             run_once(cfg)
         except Exception as e:  # never let one bad cycle kill the daemon
-            log(f"unexpected error in cycle: {e}")
+            log(f"unexpected error in cycle: {e}", event="cycle_error", level="error")
 
         minute = time.localtime().tm_min
         interval = interval_for_minute(minute)
@@ -366,7 +410,12 @@ def main() -> None:
         # so the effective cadence matches the target interval.
         elapsed = time.monotonic() - start
         sleep_for = max(1.0, interval - elapsed)
-        log(f"next poll in {sleep_for:.0f}s (tier={interval}s, minute=:{minute:02d})")
+        log(
+            f"next poll in {sleep_for:.0f}s (tier={interval}s, minute=:{minute:02d})",
+            event="sleep",
+            interval=interval,
+            sleep_for=round(sleep_for, 1),
+        )
         time.sleep(sleep_for)
 
 

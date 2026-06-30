@@ -1,0 +1,13 @@
+.venv/
+.git/
+config.env
+poll.log
+__pycache__/
+*.pyc
+k8s/
+*.md
+requests.sh
+response.html
+elements.txt
+com.rkterminauto.poll.plist
+run.sh

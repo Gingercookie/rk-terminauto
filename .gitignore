@@ -3,3 +3,6 @@ config.env
 poll.log
 __pycache__/
 *.pyc
+
+# Never commit the real k8s Secret (real 2captcha key)
+k8s/secret.yaml
