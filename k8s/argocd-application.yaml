@@ -1,8 +1,3 @@
-# Apply this once to register the app with ArgoCD (lives in the argocd ns):
-#   kubectl -n argocd apply -f k8s/argocd-application.yaml
-#
-# Set repoURL to wherever you push this repo. ArgoCD then renders k8s/ with
-# Kustomize and keeps the cluster in sync on every push.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -13,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/wilgrimthepilgrim/rk-terminauto.git
+    repoURL: https://github.com/Gingercookie/rk-terminauto.git
     targetRevision: main
     path: k8s
   destination:
